@@ -11,7 +11,9 @@ export default function proxyConsole (ws, console, sessionId) {
     },
 
     host: url.host,
-    path: url.path
+    path: url.path,
+
+    rejectUnauthorized: false
   })
 
   req.on('connect', (response, socket, head) => {
