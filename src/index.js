@@ -331,11 +331,11 @@ const setUpConsoleProxy = (webServer, xo) => {
     const [, id] = matches
     try {
       const xapi = xo.getXAPI(id, ['VM', 'VM-controller'])
-      const console = xapi.getVmConsole(id)
+      const vmConsole = xapi.getVmConsole(id)
 
       // FIXME: lost connection due to VM restart is not detected.
       webSocketServer.handleUpgrade(req, socket, head, connection => {
-        proxyConsole(connection, console, xapi.sessionId)
+        proxyConsole(connection, vmConsole, xapi.sessionId)
       })
     } catch (_) {}
   })
