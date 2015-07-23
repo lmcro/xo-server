@@ -1,56 +1,36 @@
+import partialStream from 'partial-stream'
+import {connect} from 'tls'
 import {parse} from 'url'
-import {request} from 'https'
 
 export default function proxyConsole (ws, vmConsole, sessionId) {
   const url = parse(vmConsole.location)
 
-  console.log('proxy console to', {
-    method: 'CONNECT',
-    headers: {
-      cookie: `session_id=${sessionId}`
-    },
-
+  const socket = connect({
     host: url.host,
-    path: url.path,
-
+    port: url.port || 443,
     rejectUnauthorized: false
-  })
+  }, () => {
+    // Write headers.
+    socket.write([
+      `CONNECT ${url.path} HTTP/1.0`,
+      `Host: ${url.hostname}`,
+      `Cookie: session_id=${sessionId}`,
+      '', ''
+    ].join('\r\n'))
 
-  const req = request({
-    // method: 'CONNECT',
-    headers: {
-      cookie: `session_id=${sessionId}`
-    },
-
-    host: url.host,
-    path: url.path,
-
-    rejectUnauthorized: false
-  })
-
-  req.on('response', response => {
-    console.log(response.statusCode)
-  })
-
-  req.on('connect', (response, socket, head) => {
-    console.log('connected')
-
-    socket.on('data', data => {
+    socket.pipe(partialStream('\r\n\r\n', headers => {
+      console.log({headers})
+    })).on('data', data => {
       console.log('tcp → ws', data.length)
       ws.send(data)
+    }).on('end', () => {
+      console.log('tcp closed')
+      ws.close()
     })
+
     ws.on('message', data => {
       console.log('ws → tcp', data.length)
       socket.write(data)
     })
-
-    socket.on('end', () => {
-      console.log('tcp closed')
-      ws.close()
-    })
-  })
-
-  req.on('error', error => {
-    console.error('console error', error)
   })
 }

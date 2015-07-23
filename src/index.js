@@ -337,7 +337,9 @@ const setUpConsoleProxy = (webServer, xo) => {
       webSocketServer.handleUpgrade(req, socket, head, connection => {
         proxyConsole(connection, vmConsole, xapi.sessionId)
       })
-    } catch (_) {}
+    } catch (_) {
+      console.error(_)
+    }
   })
 }
 
