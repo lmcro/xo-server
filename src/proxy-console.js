@@ -37,7 +37,7 @@ export default function proxyConsole (ws, vmConsole, sessionId) {
         socket.write(data)
       })
       .on('close', () => {
-        socket.close()
+        socket.end()
       })
   })
 }
