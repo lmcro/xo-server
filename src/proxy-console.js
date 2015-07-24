@@ -28,9 +28,16 @@ export default function proxyConsole (ws, vmConsole, sessionId) {
       ws.close()
     })
 
-    ws.on('message', data => {
-      console.log('ws → tcp', data.length)
-      socket.write(data)
-    })
+    ws
+      .on('error', () => {
+        socket.close()
+      })
+      .on('message', data => {
+        console.log('ws → tcp', data.length)
+        socket.write(data)
+      })
+      .on('close', () => {
+        socket.close()
+      })
   })
 }
