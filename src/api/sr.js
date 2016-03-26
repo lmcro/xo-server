@@ -1,13 +1,22 @@
-import forEach from 'lodash.foreach'
-import {ensureArray, parseXml} from '../utils'
+import {
+  ensureArray,
+  forEach,
+  parseXml
+} from '../utils'
 
 // ===================================================================
 
-export async function set (params) {
-  const {sr} = params
-  delete params.sr
+export async function set ({
+  sr,
 
-  await this.getXAPI(sr).setSrProperties(sr.id, params)
+  // TODO: use camel case.
+  name_description: nameDescription,
+  name_label: nameLabel
+}) {
+  await this.getXapi(sr).setSrProperties(sr._xapiId, {
+    nameDescription,
+    nameLabel
+  })
 }
 
 set.params = {
@@ -25,7 +34,7 @@ set.resolve = {
 // -------------------------------------------------------------------
 
 export async function scan ({SR}) {
-  await this.getXAPI(SR).call('SR.scan', SR.ref)
+  await this.getXapi(SR).call('SR.scan', SR._xapiRef)
 }
 
 scan.params = {
@@ -40,7 +49,7 @@ scan.resolve = {
 
 // TODO: find a way to call this "delete" and not destroy
 export async function destroy ({SR}) {
-  await this.getXAPI(SR).call('SR.destroy', SR.ref)
+  await this.getXapi(SR).call('SR.destroy', SR._xapiRef)
 }
 
 destroy.params = {
@@ -54,7 +63,7 @@ destroy.resolve = {
 // -------------------------------------------------------------------
 
 export async function forget ({SR}) {
-  await this.getXAPI(SR).call('SR.forget', SR.ref)
+  await this.getXapi(SR).call('SR.forget', SR._xapiRef)
 }
 
 forget.params = {
@@ -71,20 +80,27 @@ export async function createIso ({
   host,
   nameLabel,
   nameDescription,
-  path
+  path,
+  type,
+  user,
+  password
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
-  // FIXME: won't work for IPv6
-  // Detect if NFS or local path for ISO files
-  const deviceConfig = {location: path}
-  if (path.indexOf(':') === -1) { // not NFS share
-     // TODO: legacy will be removed in XAPI soon by FileSR
+  const deviceConfig = {}
+  if (type === 'local') {
     deviceConfig.legacy_mode = 'true'
+  } else if (type === 'smb') {
+    path = path.replace(/\\/g, '/')
+    deviceConfig.username = user
+    deviceConfig.cifspassword = password
   }
+
+  deviceConfig.location = path
+
   const srRef = await xapi.call(
     'SR.create',
-    host.ref,
+    host._xapiRef,
     deviceConfig,
     '0', // SR size 0 because ISO
     nameLabel,
@@ -103,7 +119,10 @@ createIso.params = {
   host: { type: 'string' },
   nameLabel: { type: 'string' },
   nameDescription: { type: 'string' },
-  path: { type: 'string' }
+  path: { type: 'string' },
+  type: { type: 'string' },
+  user: { type: 'string', optional: true },
+  password: { type: 'string', optional: true }
 }
 
 createIso.resolve = {
@@ -123,7 +142,7 @@ export async function createNfs ({
   serverPath,
   nfsVersion
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   const deviceConfig = {
     server,
@@ -137,7 +156,7 @@ export async function createNfs ({
 
   const srRef = await xapi.call(
     'SR.create',
-    host.ref,
+    host._xapiRef,
     deviceConfig,
     '0',
     nameLabel,
@@ -176,7 +195,7 @@ export async function createLvm ({
   nameDescription,
   device
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   const deviceConfig = {
     device
@@ -184,7 +203,7 @@ export async function createLvm ({
 
   const srRef = await xapi.call(
     'SR.create',
-    host.ref,
+    host._xapiRef,
     deviceConfig,
     '0',
     nameLabel,
@@ -218,7 +237,7 @@ export async function probeNfs ({
   host,
   server
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   const deviceConfig = {
     server
@@ -229,7 +248,7 @@ export async function probeNfs ({
   try {
     await xapi.call(
       'SR.probe',
-      host.ref,
+      host._xapiRef,
       deviceConfig,
       'nfs',
       {}
@@ -281,7 +300,7 @@ export async function createIscsi ({
   chapUser,
   chapPassword
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   const deviceConfig = {
     target,
@@ -302,7 +321,7 @@ export async function createIscsi ({
 
   const srRef = await xapi.call(
     'SR.create',
-    host.ref,
+    host._xapiRef,
     deviceConfig,
     '0',
     nameLabel,
@@ -322,7 +341,7 @@ createIscsi.params = {
   nameLabel: { type: 'string' },
   nameDescription: { type: 'string' },
   target: { type: 'string' },
-  port: { type: 'integer', optional: true},
+  port: { type: 'integer', optional: true },
   targetIqn: { type: 'string' },
   scsiId: { type: 'string' },
   chapUser: { type: 'string', optional: true },
@@ -344,7 +363,7 @@ export async function probeIscsiIqns ({
   chapUser,
   chapPassword
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   const deviceConfig = {
     target: targetIp
@@ -366,7 +385,7 @@ export async function probeIscsiIqns ({
   try {
     await xapi.call(
       'SR.probe',
-      host.ref,
+      host._xapiRef,
       deviceConfig,
       'lvmoiscsi',
       {}
@@ -421,7 +440,7 @@ export async function probeIscsiLuns ({
   chapUser,
   chapPassword
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   const deviceConfig = {
     target: targetIp,
@@ -444,7 +463,7 @@ export async function probeIscsiLuns ({
   try {
     await xapi.call(
       'SR.probe',
-      host.ref,
+      host._xapiRef,
       deviceConfig,
       'lvmoiscsi',
       {}
@@ -476,7 +495,7 @@ export async function probeIscsiLuns ({
 probeIscsiLuns.params = {
   host: { type: 'string' },
   target: { type: 'string' },
-  port: { type: 'integer', optional: true},
+  port: { type: 'integer', optional: true },
   targetIqn: { type: 'string' },
   chapUser: { type: 'string', optional: true },
   chapPassword: { type: 'string', optional: true }
@@ -499,7 +518,7 @@ export async function probeIscsiExists ({
   chapUser,
   chapPassword
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   const deviceConfig = {
     target: targetIp,
@@ -518,7 +537,7 @@ export async function probeIscsiExists ({
     deviceConfig.port = port
   }
 
-  const xml = parseXml(await xapi.call('SR.probe', host.ref, deviceConfig, 'lvmoiscsi', {}))
+  const xml = parseXml(await xapi.call('SR.probe', host._xapiRef, deviceConfig, 'lvmoiscsi', {}))
 
   const srs = []
   forEach(ensureArray(xml['SRlist'].SR), sr => {
@@ -552,14 +571,14 @@ export async function probeNfsExists ({
   server,
   serverPath
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   const deviceConfig = {
     server,
     serverpath: serverPath
   }
 
-  const xml = parseXml(await xapi.call('SR.probe', host.ref, deviceConfig, 'nfs', {}))
+  const xml = parseXml(await xapi.call('SR.probe', host._xapiRef, deviceConfig, 'nfs', {}))
 
   const srs = []
 
@@ -591,7 +610,7 @@ export async function reattach ({
   nameDescription,
   type
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   if (type === 'iscsi') {
     type = 'lvmoiscsi' // the internal XAPI name
@@ -634,7 +653,7 @@ export async function reattachIso ({
   nameDescription,
   type
 }) {
-  const xapi = this.getXAPI(host)
+  const xapi = this.getXapi(host)
 
   if (type === 'iscsi') {
     type = 'lvmoiscsi' // the internal XAPI name

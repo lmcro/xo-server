@@ -1,12 +1,17 @@
-import Bluebird from 'bluebird'
 import Collection, {ModelAlreadyExists} from '../collection'
 import difference from 'lodash.difference'
 import filter from 'lodash.filter'
-import forEach from 'lodash.foreach'
 import getKey from 'lodash.keys'
-import isEmpty from 'lodash.isempty'
-import map from 'lodash.map'
-import thenRedis from 'then-redis'
+import {createClient as createRedisClient} from 'redis'
+
+import {
+  forEach,
+  isEmpty,
+  mapToArray,
+  promisifyAll
+} from '../utils'
+
+// ===================================================================
 
 // ///////////////////////////////////////////////////////////////////
 // Data model:
@@ -36,7 +41,7 @@ export default class Redis extends Collection {
 
     this.indexes = indexes
     this.prefix = prefix
-    this.redis = connection || thenRedis.createClient(uri)
+    this.redis = promisifyAll.call(connection || createRedisClient(uri))
   }
 
   _extract (ids) {
@@ -44,7 +49,7 @@ export default class Redis extends Collection {
     const {redis} = this
 
     const models = []
-    return Bluebird.map(ids, id => {
+    return Promise.all(mapToArray(ids, id => {
       return redis.hgetall(prefix + id).then(model => {
         // If empty, consider it a no match.
         if (isEmpty(model)) {
@@ -56,7 +61,7 @@ export default class Redis extends Collection {
 
         models.push(model)
       })
-    }).return(models)
+    })).then(() => models)
   }
 
   _add (models, {replace = false} = {}) {
@@ -65,7 +70,7 @@ export default class Redis extends Collection {
 
     const {indexes, prefix, redis, idPrefix = ''} = this
 
-    return Bluebird.map(models, async function (model) {
+    return Promise.all(mapToArray(models, async model => {
       // Generate a new identifier if necessary.
       if (model.id === undefined) {
         model.id = idPrefix + String(await redis.incr(prefix + '_id'))
@@ -90,8 +95,10 @@ export default class Redis extends Collection {
         params.push(name, value)
       })
 
+      const key = `${prefix}:${model.id}`
       const promises = [
-        redis.hmset(prefix + ':' + model.id, ...params)
+        redis.del(key),
+        redis.hmset(key, ...params)
       ]
 
       // Update indexes.
@@ -108,7 +115,7 @@ export default class Redis extends Collection {
       await Promise.all(promises)
 
       return model
-    })
+    }))
   }
 
   _get (properties) {
@@ -123,10 +130,9 @@ export default class Redis extends Collection {
     if (id !== undefined) {
       delete properties.id
       return this._extract([id]).then(models => {
-        return (models.length && !isEmpty(properties)) ?
-          filter(models) :
-          models
-
+        return (models.length && !isEmpty(properties))
+          ? filter(models)
+          : models
       })
     }
 
@@ -138,7 +144,7 @@ export default class Redis extends Collection {
       throw new Error('fields not indexed: ' + unfit.join())
     }
 
-    const keys = map(properties, (value, index) => prefix + '_' + index + ':' + value)
+    const keys = mapToArray(properties, (value, index) => `${prefix}_${index}:${value}`)
     return redis.sinter(...keys).then(ids => this._extract(ids))
   }
 
@@ -152,7 +158,7 @@ export default class Redis extends Collection {
       redis.srem(prefix + '_ids', ...ids),
 
       // Remove the models.
-      redis.del(map(ids, id => prefix + ':' + id))
+      redis.del(mapToArray(ids, id => `${prefix}:${id}`))
     ])
   }
 

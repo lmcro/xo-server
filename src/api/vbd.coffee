@@ -5,10 +5,10 @@
 #=====================================================================
 
 delete_ = $coroutine ({vbd}) ->
-  xapi = @getXAPI vbd
+  xapi = @getXapi vbd
 
   # TODO: check if VBD is attached before
-  yield xapi.call 'VBD.destroy', vbd.ref
+  yield xapi.call 'VBD.destroy', vbd._xapiRef
 
   return true
 
@@ -25,12 +25,9 @@ exports.delete = delete_
 #---------------------------------------------------------------------
 
 disconnect = $coroutine ({vbd}) ->
-  xapi = @getXAPI vbd
-
-  # TODO: check if VBD is attached before
-  yield xapi.call 'VBD.unplug_force', vbd.ref
-
-  return true
+  xapi = @getXapi vbd
+  yield xapi.disconnectVbd(vbd._xapiRef)
+  return
 
 disconnect.params = {
   id: { type: 'string' }
@@ -45,12 +42,9 @@ exports.disconnect = disconnect
 #---------------------------------------------------------------------
 
 connect = $coroutine ({vbd}) ->
-  xapi = @getXAPI vbd
-
-  # TODO: check if VBD is attached before
-  yield xapi.call 'VBD.plug', vbd.ref
-
-  return true
+  xapi = @getXapi vbd
+  yield xapi.connectVbd(vbd._xapiRef)
+  return
 
 connect.params = {
   id: { type: 'string' }
@@ -66,9 +60,9 @@ exports.connect = connect
 
 set = $coroutine (params) ->
   {vbd} = params
-  xapi = @getXAPI vbd
+  xapi = @getXapi vbd
 
-  {ref} = vbd
+  { _xapiRef: ref } = vbd
 
   # VBD position
   if 'position' of params
@@ -87,3 +81,29 @@ set.resolve = {
 }
 
 exports.set = set
+
+#---------------------------------------------------------------------
+
+setBootable = $coroutine ({vbd, bootable}) ->
+  xapi = @getXapi vbd
+  { _xapiRef: ref } = vbd
+
+  yield xapi.call 'VBD.set_bootable', ref, bootable
+  return
+
+setBootable.params = {
+  vbd: { type: 'string' }
+  bootable: { type: 'boolean' }
+}
+
+setBootable.resolve = {
+  vbd: ['vbd', 'VBD', 'administrate'],
+}
+
+exports.setBootable = setBootable
+
+#=====================================================================
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+})

@@ -1,47 +1,10 @@
-import forEach from 'lodash.foreach'
-import {hash, needsRehash, verify} from 'hashy'
-
 import Collection from '../collection/redis'
 import Model from '../model'
+import { forEach } from '../utils'
 
 // ===================================================================
 
-const PERMISSIONS = {
-  none: 0,
-  read: 1,
-  write: 2,
-  admin: 3
-}
-
-// ===================================================================
-
-export default class User extends Model {
-  async checkPassword (password) {
-    const hash = this.get('pw_hash')
-
-    if (!(hash && await verify(password, hash))) {
-      return false
-    }
-
-    // There might be no hash if the user authenticate with another
-    // method (e.g. LDAP).
-    if (needsRehash(hash)) {
-      await this.setPassword(password)
-    }
-
-    return true
-  }
-
-  hasPermission (permission) {
-    return PERMISSIONS[this.get('permission')] >= PERMISSIONS[permission]
-  }
-
-  setPassword (password) {
-    return hash(password).then(hash => {
-      return this.set('pw_hash', hash)
-    })
-  }
-}
+export default class User extends Model {}
 
 User.prototype.default = {
   permission: 'none'
@@ -54,24 +17,27 @@ export class Users extends Collection {
     return User
   }
 
-  async create (email, password, permission = 'none') {
-    const user = new User({
-      email,
-      permission
-    })
-
-    if (password != null) {
-      await user.setPassword(password)
+  async create (email, properties = {}) {
+    // Avoid duplicates.
+    if (await this.exists({email})) {
+      throw new Error(`the user ${email} already exists`)
     }
 
-    return this.add(user)
+    // Adds the email to the user's properties.
+    properties.email = email
+
+    // Create the user object.
+    const user = new User(properties)
+
+    // Adds the user to the collection.
+    return /* await */ this.add(user)
   }
 
   async save (user) {
     // Serializes.
     user.groups = JSON.stringify(user.groups)
 
-    return await this.update(user)
+    return /* await */ this.update(user)
   }
 
   async get (properties) {

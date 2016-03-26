@@ -1,6 +1,8 @@
 import Collection from '../collection/redis'
-import forEach from 'lodash.foreach'
 import Model from '../model'
+import {
+  forEach
+} from '../utils'
 
 // ===================================================================
 
@@ -25,12 +27,14 @@ export class Remotes extends Collection {
   }
 
   async save (remote) {
-    return await this.update(remote)
+    return /* await */ this.update(remote)
   }
 
   async get (properties) {
     const remotes = await super.get(properties)
-    forEach(remotes, remote => {remote.enabled = (remote.enabled === 'true')})
+    forEach(remotes, remote => {
+      remote.enabled = (remote.enabled === 'true')
+    })
     return remotes
   }
 }

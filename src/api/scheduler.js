@@ -7,7 +7,7 @@ export async function enable ({id}) {
 enable.permission = 'admin'
 enable.description = 'Enables a schedule to run it\'s job as scheduled'
 enable.params = {
-	id: {type: 'string'}
+  id: {type: 'string'}
 }
 
 export async function disable ({id}) {
@@ -19,11 +19,11 @@ export async function disable ({id}) {
 disable.permission = 'admin'
 disable.description = 'Disables a schedule'
 disable.params = {
-	id: {type: 'string'}
+  id: {type: 'string'}
 }
 
 export function getScheduleTable () {
-  return this.scheduler.scheduleTable
+  return this.scheduleTable
 }
 
 disable.permission = 'admin'

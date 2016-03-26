@@ -1,7 +1,10 @@
-import assign from 'lodash.assign'
-import forEach from 'lodash.foreach'
-import isEmpty from 'lodash.isempty'
 import {EventEmitter} from 'events'
+
+import {
+  forEach,
+  isEmpty,
+  isString
+} from './utils'
 
 // ===================================================================
 
@@ -9,7 +12,7 @@ export default class Model extends EventEmitter {
   constructor (properties) {
     super()
 
-    this.properties = assign({}, this.default)
+    this.properties = { ...this.default }
 
     if (properties) {
       this.set(properties)
@@ -39,7 +42,7 @@ export default class Model extends EventEmitter {
   set (properties, value) {
     // This method can also be used with two arguments to set a single
     // property.
-    if (value !== undefined) {
+    if (isString(properties)) {
       properties = { [properties]: value }
     }
 

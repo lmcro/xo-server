@@ -3,13 +3,15 @@
 $isArray = require 'lodash.isarray'
 {coroutine: $coroutine} = require 'bluebird'
 
+{format} = require 'json-rpc-peer'
 {InvalidParameters} = require '../api-errors'
 {parseSize} = require '../utils'
+{JsonRpcError} = require '../api-errors'
 
 #=====================================================================
 
 delete_ = $coroutine ({vdi}) ->
-  yield @getXAPI(vdi).deleteVdi(vdi.id)
+  yield @getXapi(vdi).deleteVdi(vdi._xapiId)
 
   return
 
@@ -18,7 +20,7 @@ delete_.params = {
 }
 
 delete_.resolve = {
-  vdi: ['id', 'VDI', 'administrate'],
+  vdi: ['id', ['VDI', 'VDI-snapshot'], 'administrate'],
 }
 
 exports.delete = delete_
@@ -28,9 +30,9 @@ exports.delete = delete_
 # FIXME: human readable strings should be handled.
 set = $coroutine (params) ->
   {vdi} = params
-  xapi = @getXAPI vdi
+  xapi = @getXapi vdi
 
-  {ref} = vdi
+  {_xapiRef: ref} = vdi
 
   # Size.
   if 'size' of params
@@ -40,8 +42,7 @@ set = $coroutine (params) ->
       throw new InvalidParameters(
         "cannot set new size (#{size}) below the current size (#{vdi.size})"
       )
-
-    yield xapi.call 'VDI.resize_online', ref, "#{size}"
+    yield xapi.resizeVdi(ref, size)
 
   # Other fields.
   for param, fields of {
@@ -68,7 +69,7 @@ set.params = {
 }
 
 set.resolve = {
-  vdi: ['id', 'VDI', 'administrate'],
+  vdi: ['id', ['VDI', 'VDI-snapshot'], 'administrate'],
 }
 
 exports.set = set
@@ -76,10 +77,9 @@ exports.set = set
 #---------------------------------------------------------------------
 
 migrate = $coroutine ({vdi, sr}) ->
-  xapi = @getXAPI vdi
+  xapi = @getXapi vdi
 
-  # TODO: check if VDI is attached before
-  yield xapi.call 'VDI.pool_migrate', vdi.ref, sr.ref, {}
+  yield xapi.moveVdi(vdi._xapiRef, sr._xapiRef)
 
   return true
 
@@ -89,8 +89,14 @@ migrate.params = {
 }
 
 migrate.resolve = {
-  vdi: ['id', 'VDI', 'administrate'],
+  vdi: ['id', ['VDI', 'VDI-snapshot'], 'administrate'],
   sr: ['sr_id', 'SR', 'administrate'],
 }
 
 exports.migrate = migrate
+
+#=====================================================================
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+})

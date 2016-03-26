@@ -13,7 +13,7 @@ export async function signIn (credentials) {
   if (!user) {
     throw new InvalidCredential()
   }
-  this.session.set('user_id', user.get('id'))
+  this.session.set('user_id', user.id)
 
   return this.getUserPublicProperties(user)
 }
@@ -53,9 +53,9 @@ signOut.permission = ''
 export async function getUser () {
   const userId = this.session.get('user_id')
 
-  return userId === undefined ?
-    null :
-    this.getUserPublicProperties(await this.getUser(userId))
+  return userId === undefined
+    ? null
+    : this.getUserPublicProperties(await this.getUser(userId))
 }
 
 getUser.description = 'return the currently connected user'

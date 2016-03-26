@@ -50,3 +50,21 @@ export class AlreadyAuthenticated extends JsonRpcError {
     super('already authenticated', 4)
   }
 }
+
+// -------------------------------------------------------------------
+
+export class ForbiddenOperation extends JsonRpcError {
+  constructor (operation, reason) {
+    super(`forbidden operation: ${operation}`, 5, reason)
+  }
+}
+
+// -------------------------------------------------------------------
+
+// To be used with a user-readable message.
+// The message can be destined to be displayed to the front-end user.
+export class GenericError extends JsonRpcError {
+  constructor (message) {
+    super(message, 6)
+  }
+}

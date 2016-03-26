@@ -2,27 +2,28 @@ $debug = (require 'debug') 'xo:api:vm'
 $find = require 'lodash.find'
 $findIndex = require 'lodash.findindex'
 $forEach = require 'lodash.foreach'
-$request = require('bluebird').promisify(require('request'))
 endsWith = require 'lodash.endswith'
 startsWith = require 'lodash.startswith'
 {coroutine: $coroutine} = require 'bluebird'
-{parseXml} = require '../utils'
+{
+  extractProperty,
+  parseXml,
+  promisify
+} = require '../utils'
 
 #=====================================================================
 
-set = $coroutine (params) ->
-  {host} = params
-  xapi = @getXAPI host
+set = ({
+  host,
 
-  for param, field of {
-    'name_label'
-    'name_description'
-  }
-    continue unless param of params
-
-    yield xapi.call "host.set_#{field}", host.ref, params[param]
-
-  return true
+  # TODO: use camel case.
+  name_label: nameLabel,
+  name_description: nameDescription
+}) ->
+  return @getXapi(host).setHostProperties(host._xapiId, {
+    nameLabel,
+    nameDescription
+  })
 
 set.description = 'changes the properties of an host'
 
@@ -43,18 +44,19 @@ exports.set = set
 
 #---------------------------------------------------------------------
 
-restart = $coroutine ({host}) ->
-  xapi = @getXAPI host
-
-  yield xapi.call 'host.disable', host.ref
-  yield xapi.call 'host.reboot', host.ref
-
-  return true
+# FIXME: set force to false per default when correctly implemented in
+# UI.
+restart = ({host, force = true}) ->
+  return @getXapi(host).rebootHost(host._xapiId, force)
 
 restart.description = 'restart the host'
 
 restart.params = {
-  id: { type: 'string' }
+  id: { type: 'string' },
+  force: {
+    type: 'boolean',
+    optional: true
+  }
 }
 
 restart.resolve = {
@@ -65,12 +67,8 @@ exports.restart = restart
 
 #---------------------------------------------------------------------
 
-restartAgent = $coroutine ({host}) ->
-  xapi = @getXAPI host
-
-  yield xapi.call 'host.restart_agent', host.ref
-
-  return true
+restartAgent = ({host}) ->
+  return @getXapi(host).restartHostAgent(host._xapiId)
 
 restartAgent.description = 'restart the Xen agent on the host'
 
@@ -79,7 +77,7 @@ restartAgent.params = {
 }
 
 restartAgent.resolve = {
-  host: ['id', 'host', 'operate'],
+  host: ['id', 'host', 'administrate'],
 }
 
 # TODO camel case
@@ -87,12 +85,8 @@ exports.restart_agent = restartAgent
 
 #---------------------------------------------------------------------
 
-start = $coroutine ({host}) ->
-  xapi = @getXAPI host
-
-  yield xapi.call 'host.power_on', host.ref
-
-  return true
+start = ({host}) ->
+  return @getXapi(host).powerOnHost(host._xapiId)
 
 start.description = 'start the host'
 
@@ -108,13 +102,8 @@ exports.start = start
 
 #---------------------------------------------------------------------
 
-stop = $coroutine ({host}) ->
-  xapi = @getXAPI host
-
-  yield xapi.call 'host.disable', host.ref
-  yield xapi.call 'host.shutdown', host.ref
-
-  return true
+stop = ({host}) ->
+  return @getXapi(host).shutdownHost(host._xapiId)
 
 stop.description = 'stop the host'
 
@@ -130,12 +119,8 @@ exports.stop = stop
 
 #---------------------------------------------------------------------
 
-detach = $coroutine ({host}) ->
-  xapi = @getXAPI host
-
-  yield xapi.call 'pool.eject', host.ref
-
-  return true
+detach = ({host}) ->
+  return @getXapi(host).ejectHostFromPool(host._xapiId)
 
 detach.description = 'eject the host of a pool'
 
@@ -151,12 +136,8 @@ exports.detach = detach
 
 #---------------------------------------------------------------------
 
-enable = $coroutine ({host}) ->
-  xapi = @getXAPI host
-
-  yield xapi.call 'host.enable', host.ref
-
-  return true
+enable = ({host}) ->
+  return @getXapi(host).enableHost(host._xapiId)
 
 enable.description = 'enable to create VM on the host'
 
@@ -172,12 +153,8 @@ exports.enable = enable
 
 #---------------------------------------------------------------------
 
-disable = $coroutine ({host}) ->
-  xapi = @getXAPI host
-
-  yield xapi.call 'host.disable', host.ref
-
-  return true
+disable = ({host}) ->
+  return @getXapi(host).disableHost(host._xapiId)
 
 disable.description = 'disable to create VM on the hsot'
 
@@ -192,48 +169,12 @@ disable.resolve = {
 exports.disable = disable
 
 #---------------------------------------------------------------------
-
-createNetwork = $coroutine ({host, name, description, pif, mtu, vlan}) ->
-  xapi = @getXAPI host
-
-  description = description ? 'Created with Xen Orchestra'
-
-  network_ref = yield xapi.call 'network.create', {
-    name_label: name,
-    name_description: description,
-    MTU: mtu ? '1500'
-    other_config: {}
-  }
-
-  if pif?
-    vlan = vlan ? '0'
-    pif = @getObject pif, 'PIF'
-    yield xapi.call 'pool.create_VLAN_from_PIF', pif.ref, network_ref, vlan
-
-  return true
-
-createNetwork.params = {
-  host: { type: 'string' }
-  name: { type: 'string' }
-  description: { type: 'string', optional: true }
-  pif: { type: 'string', optional: true }
-  mtu: { type: 'string', optional: true }
-  vlan: { type: 'string', optional: true }
-}
-
-createNetwork.resolve = {
-  host: ['host', 'host', 'administrate'],
-}
-createNetwork.permission = 'admin'
-exports.createNetwork = createNetwork
-
-#---------------------------------------------------------------------
 # Returns an array of missing new patches in the host
 # Returns an empty array if up-to-date
 # Throws an error if the host is not running the latest XS version
 
 listMissingPatches = ({host}) ->
-  return @getXAPI(host).listMissingPoolPatchesOnHost(host.id)
+  return @getXapi(host).listMissingPoolPatchesOnHost(host._xapiId)
 
 listMissingPatches.params = {
   host: { type: 'string' }
@@ -250,7 +191,7 @@ listMissingPatches.description = 'return an array of missing new patches in the 
 #---------------------------------------------------------------------
 
 installPatch = ({host, patch: patchUuid}) ->
-  return @getXAPI(host).installPoolPatchOnHost(patchUuid, host.id)
+  return @getXapi(host).installPoolPatchOnHost(patchUuid, host._xapiId)
 
 installPatch.description = 'install a patch on an host'
 
@@ -267,91 +208,51 @@ exports.installPatch = installPatch
 
 #---------------------------------------------------------------------
 
+installAllPatches = ({host}) ->
+  return @getXapi(host).installAllPoolPatchesOnHost(host._xapiId)
 
-stats = $coroutine ({host}) ->
+installAllPatches.description = 'install all the missing patches on a host'
 
-  xapi = @getXAPI host
+installAllPatches.params = {
+  host: { type: 'string' }
+}
 
-  [response, body] = yield $request {
-    method: 'get'
-    rejectUnauthorized: false
-    url: 'https://'+host.address+'/host_rrd?session_id='+xapi.sessionId
-  }
+installAllPatches.resolve = {
+  host: ['host', 'host', 'administrate']
+}
 
-  if response.statusCode isnt 200
-    throw new Error('Cannot fetch the RRDs')
+exports.installAllPatches = installAllPatches
 
-  json = parseXml(body)
+#---------------------------------------------------------------------
 
-  # Find index of needed objects for getting their values after
-  cpusIndexes = []
-  pifsIndexes = []
-  memoryFreeIndex = []
-  memoryIndex = []
-  loadIndex = []
-  index = 0
+emergencyShutdownHost = ({host}) ->
+  return @getXapi(host).emergencyShutdownHost(host._xapiId)
 
-  $forEach(json.rrd.ds, (value, i) ->
-    if /^cpu[0-9]+$/.test(value.name)
-      cpusIndexes.push(i)
-    else if startsWith(value.name, 'pif_eth') && endsWith(value.name, '_tx')
-      pifsIndexes.push(i)
-    else if startsWith(value.name, 'pif_eth') && endsWith(value.name, '_rx')
-      pifsIndexes.push(i)
-    else if startsWith(value.name, 'loadavg')
-      loadIndex.push(i)
-    else if startsWith(value.name, 'memory_free_kib')
-      memoryFreeIndex.push(i)
-    else if startsWith(value.name, 'memory_total_kib')
-      memoryIndex.push(i)
+emergencyShutdownHost.description = 'suspend all VMs and shutdown host'
 
-    return
-  )
+emergencyShutdownHost.params = {
+  host: { type: 'string' }
+}
 
-  memoryFree = []
-  memoryUsed = []
-  memory = []
-  load = []
-  cpus = []
-  pifs = []
-  date = [] #TODO
-  baseDate = json.rrd.lastupdate
-  dateStep = json.rrd.step
-  numStep = json.rrd.rra[0].database.row.length - 1
+emergencyShutdownHost.resolve = {
+  host: ['host', 'host', 'administrate']
+}
 
-  $forEach json.rrd.rra[0].database.row, (n, key) ->
-    memoryFree.push(Math.round(parseInt(n.v[memoryFreeIndex])))
-    memoryUsed.push(Math.round(parseInt(n.v[memoryIndex])-(n.v[memoryFreeIndex])))
-    memory.push(parseInt(n.v[memoryIndex]))
-    load.push(n.v[loadIndex])
-    date.push(baseDate - (dateStep * (numStep - key)))
-    # build the multi dimensional arrays
-    $forEach cpusIndexes, (value, key) ->
-      cpus[key] ?= []
-      cpus[key].push(n.v[value]*100)
-      return
-    $forEach pifsIndexes, (value, key) ->
-      pifs[key] ?= []
-      pifs[key].push(if n.v[value] == 'NaN' then null else n.v[value]) # * (if key % 2 then -1 else 1))
-      return
-    return
+exports.emergencyShutdownHost = emergencyShutdownHost
 
+#---------------------------------------------------------------------
 
-  # the final object
-  return {
-    memoryFree: memoryFree
-    memoryUsed: memoryUsed
-    memory: memory
-    date: date
-    cpus: cpus
-    pifs: pifs
-    load: load
-  }
+stats = ({host, granularity}) ->
+  return @getXapiHostStats(host, granularity)
 
 stats.description = 'returns statistic of the host'
 
 stats.params = {
-  host: { type: 'string' }
+  host: { type: 'string' },
+  granularity: {
+    type: 'string',
+    optional: true
+  }
 }
 
 stats.resolve = {
@@ -359,3 +260,9 @@ stats.resolve = {
 }
 
 exports.stats = stats;
+
+#=====================================================================
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+})

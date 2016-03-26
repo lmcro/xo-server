@@ -1,7 +1,7 @@
-import forEach from 'lodash.foreach'
-
 import Collection from '../collection/redis'
 import Model from '../model'
+
+import { forEach } from '../utils'
 
 // ===================================================================
 
@@ -29,7 +29,7 @@ export class Groups extends Collection {
     // Serializes.
     group.users = JSON.stringify(group.users)
 
-    return await this.update(group)
+    return /* await */ this.update(group)
   }
 
   async get (properties) {

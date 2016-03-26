@@ -1,14 +1,16 @@
-import isArray from 'lodash.isarray'
-import isObject from 'lodash.isobject'
 import Model from './model'
 import {BaseError} from 'make-error'
 import {EventEmitter} from 'events'
-import {mapInPlace} from './utils'
+import {
+  isArray,
+  isObject,
+  map
+  } from './utils'
 
 // ===================================================================
 
 export class ModelAlreadyExists extends BaseError {
- constructor (id) {
+  constructor (id) {
     super('this model already exists: ' + id)
   }
 }
@@ -39,11 +41,10 @@ export default class Collection extends EventEmitter {
     const array = isArray(models)
     if (!array) {
       models = [models]
-
     }
 
     const {Model} = this
-    mapInPlace(models, model => {
+    map(models, model => {
       if (!(model instanceof Model)) {
         model = new Model(model)
       }
@@ -55,21 +56,21 @@ export default class Collection extends EventEmitter {
       }
 
       return model.properties
-    })
+    }, models)
 
     models = await this._add(models, opts)
     this.emit('add', models)
 
-    return array ?
-      models :
-      new this.Model(models[0])
+    return array
+      ? models
+      : new this.Model(models[0])
   }
 
   async first (properties) {
     if (!isObject(properties)) {
-      properties = (properties !== undefined) ?
-        { id: properties } :
-        {}
+      properties = (properties !== undefined)
+        ? { id: properties }
+        : {}
     }
 
     const model = await this._first(properties)
@@ -78,12 +79,12 @@ export default class Collection extends EventEmitter {
 
   async get (properties) {
     if (!isObject(properties)) {
-      properties = (properties !== undefined) ?
-        { id: properties } :
-        {}
+      properties = (properties !== undefined)
+        ? { id: properties }
+        : {}
     }
 
-    return await this._get(properties)
+    return /* await */ this._get(properties)
   }
 
   async remove (ids) {
@@ -104,7 +105,7 @@ export default class Collection extends EventEmitter {
     }
 
     const {Model} = this
-    mapInPlace(models, model => {
+    map(models, model => {
       if (!(model instanceof Model)) {
         // TODO: Problems, we may be mixing in some default
         // properties which will overwrite existing ones.
@@ -126,14 +127,14 @@ export default class Collection extends EventEmitter {
       }
 
       return model.properties
-    })
+    }, models)
 
     models = await this._update(models)
     this.emit('update', models)
 
-    return array ?
-      models :
-      new this.Model(models[0])
+    return array
+      ? models
+      : new this.Model(models[0])
   }
 
   // Methods to override in implementations.
@@ -168,8 +169,8 @@ export default class Collection extends EventEmitter {
   async _first (properties) {
     const models = await this.get(properties)
 
-    return models.length ?
-      models[0] :
-      null
+    return models.length
+      ? models[0]
+      : null
   }
 }

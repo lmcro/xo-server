@@ -1,8 +1,6 @@
 import {EventEmitter} from 'events'
 
-// ===================================================================
-
-// const noop = () => {}
+import {createRawObject, noop} from './utils'
 
 // ===================================================================
 
@@ -10,13 +8,13 @@ export default class Connection extends EventEmitter {
   constructor () {
     super()
 
-    this._data = Object.create(null)
+    this._data = createRawObject()
   }
 
   // Close the connection.
   close () {
     // Prevent errors when the connection is closed more than once.
-    // this.close = noop
+    this.close = noop
 
     this.emit('close')
   }

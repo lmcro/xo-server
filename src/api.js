@@ -1,13 +1,8 @@
 import createDebug from 'debug'
 const debug = createDebug('xo:api')
 
-import assign from 'lodash.assign'
-import Bluebird from 'bluebird'
-import forEach from 'lodash.foreach'
 import getKeys from 'lodash.keys'
-import isFunction from 'lodash.isfunction'
 import kindOf from 'kindof'
-import map from 'lodash.map'
 import ms from 'ms'
 import schemaInspector from 'schema-inspector'
 
@@ -17,8 +12,28 @@ import {
   NoSuchObject,
   Unauthorized
 } from './api-errors'
+import {
+  version as xoServerVersion
+} from '../package.json'
+import {
+  createRawObject,
+  forEach,
+  isFunction,
+  noop
+} from './utils'
 
 // ===================================================================
+
+const PERMISSIONS = {
+  none: 0,
+  read: 1,
+  write: 2,
+  admin: 3
+}
+
+const hasPermission = (user, permission) => (
+  PERMISSIONS[user.permission] >= PERMISSIONS[permission]
+)
 
 // FIXME: this function is specific to XO and should not be defined in
 // this file.
@@ -42,7 +57,7 @@ function checkPermission (method) {
     return
   }
 
-  if (!user.hasPermission(permission)) {
+  if (!hasPermission(user, permission)) {
     throw new Unauthorized()
   }
 }
@@ -67,80 +82,6 @@ function checkParams (method, params) {
 
 // -------------------------------------------------------------------
 
-// Forward declaration.
-let checkAuthorization
-
-function authorized () {}
-// function forbiddden () {
-//   // We don't care about an error object.
-//   /* eslint no-throw-literal: 0 */
-//   throw null
-// }
-function checkMemberAuthorization (member) {
-  return function (userId, object, permission) {
-    const memberObject = this.getObject(object[member])
-    return checkAuthorization.call(this, userId, memberObject, permission)
-  }
-}
-
-const checkAuthorizationByTypes = {
-  // Objects of these types do not requires any authorization.
-  'network': authorized,
-  'VM-template': authorized,
-
-  message: checkMemberAuthorization('$object'),
-
-  task: checkMemberAuthorization('$host'),
-
-  VBD: checkMemberAuthorization('VDI'),
-
-  // Access to a VDI is granted if the user has access to the
-  // containing SR or to a linked VM.
-  VDI (userId, vdi, permission) {
-    // Check authorization for each of the connected VMs.
-    const promises = map(this.getObjects(vdi.$VBDs, 'VBD'), vbd => {
-      const vm = this.getObject(vbd.VM, 'VM')
-      return checkAuthorization.call(this, userId, vm, permission)
-    })
-
-    // Check authorization for the containing SR.
-    const sr = this.getObject(vdi.$SR, 'SR')
-    promises.push(checkAuthorization.call(this, userId, sr, permission))
-
-    // We need at least one success
-    return Bluebird.any(promises)
-  },
-
-  VIF (userId, vif, permission) {
-    const network = this.getObject(vif.$network)
-    const vm = this.getObject(vif.$VM)
-
-    return Bluebird.any([
-      checkAuthorization.call(this, userId, network, permission),
-      checkAuthorization.call(this, userId, vm, permission)
-    ])
-  },
-
-  'VM-snapshot': checkMemberAuthorization('$snapshot_of')
-}
-
-function throwIfFail (success) {
-  if (!success) {
-    // We don't care about an error object.
-    /* eslint no-throw-literal: 0 */
-    throw null
-  }
-}
-
-function defaultCheckAuthorization (userId, object, permission) {
-  return this.hasPermission(userId, object.id, permission).then(throwIfFail)
-}
-
-checkAuthorization = async function (userId, object, permission) {
-  const fn = checkAuthorizationByTypes[object.type] || defaultCheckAuthorization
-  return fn.call(this, userId, object, permission)
-}
-
 function resolveParams (method, params) {
   const resolve = method.resolve
   if (!resolve) {
@@ -152,10 +93,12 @@ function resolveParams (method, params) {
     throw new Unauthorized()
   }
 
-  const userId = user.get('id')
-  const isAdmin = this.user.hasPermission('admin')
+  const userId = user.id
 
-  const promises = []
+  // Do not alter the original object.
+  params = { ...params }
+
+  const permissions = []
   forEach(resolve, ([param, types, permission = 'administrate'], key) => {
     const id = params[param]
     if (id === undefined) {
@@ -170,15 +113,18 @@ function resolveParams (method, params) {
     // Register this new value.
     params[key] = object
 
-    if (!isAdmin) {
-      promises.push(checkAuthorization.call(this, userId, object, permission))
+    if (!permissions) {
+      permissions.push([ object.id, permission ])
     }
   })
 
-  return Promise.all(promises).then(
-    () => params,
-    () => { throw new Unauthorized() }
-  )
+  return this.hasPermissions(userId, permissions).then(success => {
+    if (success) {
+      return params
+    }
+
+    throw new Unauthorized()
+  })
 }
 
 // ===================================================================
@@ -186,17 +132,22 @@ function resolveParams (method, params) {
 function getMethodsInfo () {
   const methods = {}
 
-  forEach(this.api._methods, function (method, name) {
-    this[name] = assign({}, {
+  forEach(this.api._methods, (method, name) => {
+    methods[name] = {
       description: method.description,
       params: method.params || {},
       permission: method.permission
-    })
-  }, methods)
+    }
+  })
 
   return methods
 }
 getMethodsInfo.description = 'returns the signatures of all available API methods'
+
+// -------------------------------------------------------------------
+
+const getServerVersion = () => xoServerVersion
+getServerVersion.description = 'return the version of xo-server'
 
 // -------------------------------------------------------------------
 
@@ -222,11 +173,12 @@ function methodSignature ({method: name}) {
   // Return an array for compatibility with XML-RPC.
   return [
     // XML-RPC require the name of the method.
-    assign({ name }, {
+    {
+      name,
       description: method.description,
       params: method.params || {},
       permission: method.permission
-    })
+    }
   ]
 }
 methodSignature.description = 'returns the signature of an API method'
@@ -234,13 +186,18 @@ methodSignature.description = 'returns the signature of an API method'
 // ===================================================================
 
 export default class Api {
-  constructor ({context} = {}) {
-    this._methods = Object.create(null)
+  constructor ({
+    context,
+    verboseLogsOnErrors
+  } = {}) {
+    this._methods = createRawObject()
+    this._verboseLogsOnErrors = verboseLogsOnErrors
     this.context = context
 
     this.addMethods({
       system: {
         getMethodsInfo,
+        getServerVersion,
         getVersion,
         listMethods,
         methodSignature
@@ -249,12 +206,25 @@ export default class Api {
   }
 
   addMethod (name, method) {
-    this._methods[name] = method
+    const methods = this._methods
+
+    if (name in methods) {
+      throw new Error(`API method ${name} already exists`)
+    }
+
+    methods[name] = method
+
+    let unset = () => {
+      delete methods[name]
+      unset = noop
+    }
+    return () => unset()
   }
 
   addMethods (methods) {
     let base = ''
-    forEach(methods, function addMethod (method, name) {
+
+    const addMethod = (method, name) => {
       name = base + name
 
       if (isFunction(method)) {
@@ -264,9 +234,10 @@ export default class Api {
 
       const oldBase = base
       base = name + '.'
-      forEach(method, addMethod, this)
+      forEach(method, addMethod)
       base = oldBase
-    }, this)
+    }
+    forEach(methods, addMethod)
   }
 
   async call (session, name, params) {
@@ -277,24 +248,32 @@ export default class Api {
       throw new MethodNotFound(name)
     }
 
-    const context = Object.create(this.context)
-    context.api = this // Used by system.*().
-    context.session = session
+    // FIXME: it can cause issues if there any property assignments in
+    // XO methods called from the API.
+    const context = Object.create(this.context, {
+      api: { // Used by system.*().
+        value: this
+      },
+      session: {
+        value: session
+      }
+    })
 
     // FIXME: too coupled with XO.
     // Fetch and inject the current user.
     const userId = session.get('user_id', undefined)
-    if (userId) {
-      context.user = await context._getUser(userId)
-    }
+    context.user = userId && await context.getUser(userId)
+    const userName = context.user
+      ? context.user.email
+      : '(unknown user)'
 
     try {
       await checkPermission.call(context, method)
       checkParams(method, params)
 
-      await resolveParams.call(context, method, params)
+      const resolvedParams = await resolveParams.call(context, method, params)
 
-      let result = await method.call(context, params)
+      let result = await method.call(context, resolvedParams)
 
       // If nothing was returned, consider this operation a success
       // and return true.
@@ -303,7 +282,8 @@ export default class Api {
       }
 
       debug(
-        '%s(...) [%s] ==> %s',
+        '%s | %s(...) [%s] ==> %s',
+        userName,
         name,
         ms(Date.now() - startTime),
         kindOf(result)
@@ -311,16 +291,28 @@ export default class Api {
 
       return result
     } catch (error) {
-      debug(
-        '%s(...) [%s] =!> %s',
-        name,
-        ms(Date.now() - startTime),
-        error
-      )
+      if (this._verboseLogsOnErrors) {
+        debug(
+          '%s | %s(%j) [%s] =!> %s',
+          userName,
+          name,
+          params,
+          ms(Date.now() - startTime),
+          error
+        )
 
-      const stack = error && error.stack
-      if (stack) {
-        console.error(stack)
+        const stack = error && error.stack
+        if (stack) {
+          console.error(stack)
+        }
+      } else {
+        debug(
+          '%s | %s(...) [%s] =!> %s',
+          userName,
+          name,
+          ms(Date.now() - startTime),
+          error
+        )
       }
 
       throw error

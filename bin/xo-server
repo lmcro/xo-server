@@ -4,4 +4,12 @@
 
 // ===================================================================
 
+// Better stack traces if possible.
+require('../better-stacks')
+
+// Make unhandled rejected promises visible.
+process.on('unhandledRejection', (reason) => {
+  console.log('[Warn] Possibly unhandled rejection:', reason && reason.stack || reason)
+})
+
 require('exec-promise')(require('../'))

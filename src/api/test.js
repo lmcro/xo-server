@@ -1,9 +1,21 @@
-import {delay} from 'bluebird'
+export function getPermissionsForUser ({ userId }) {
+  return this.getPermissionsForUser(userId)
+}
 
-// ===================================================================
+getPermissionsForUser.permission = 'admin'
 
-export function hasPermission ({userId, objectId, permission}) {
-  return this.hasPermission(userId, objectId, permission)
+getPermissionsForUser.params = {
+  userId: {
+    type: 'string'
+  }
+}
+
+// -------------------------------------------------------------------
+
+export function hasPermission ({ userId, objectId, permission }) {
+  return this.hasPermissions(userId, [
+    [ objectId, permission ]
+  ])
 }
 
 hasPermission.permission = 'admin'
@@ -23,7 +35,11 @@ hasPermission.params = {
 // -------------------------------------------------------------------
 
 export function wait ({duration, returnValue}) {
-  return delay(returnValue, +duration)
+  return new Promise(resolve => {
+    setTimeout(+duration, () => {
+      resolve(returnValue)
+    })
+  })
 }
 
 wait.params = {

@@ -1,11 +1,10 @@
-import map from 'lodash.map'
-
 import {InvalidParameters} from '../api-errors'
+import { mapToArray } from '../utils'
 
 // ===================================================================
 
 export async function create ({email, password, permission}) {
-  return (await this.createUser({email, password, permission})).id
+  return (await this.createUser(email, {password, permission})).id
 }
 
 create.description = 'creates a new user'
@@ -15,7 +14,7 @@ create.permission = 'admin'
 create.params = {
   email: { type: 'string' },
   password: { type: 'string' },
-  permission: { type: 'string', optional: true}
+  permission: { type: 'string', optional: true }
 }
 
 // -------------------------------------------------------------------
@@ -46,10 +45,10 @@ delete_.params = {
 // collection.
 export async function getAll () {
   // Retrieves the users.
-  const users = await this._users.get()
+  const users = await this.getAllUsers()
 
   // Filters out private properties.
-  return map(users, this.getUserPublicProperties)
+  return mapToArray(users, this.getUserPublicProperties)
 }
 
 getAll.description = 'returns all the existing users'
@@ -71,4 +70,20 @@ set.params = {
   email: { type: 'string', optional: true },
   password: { type: 'string', optional: true },
   permission: { type: 'string', optional: true }
+}
+
+// -------------------------------------------------------------------
+
+export async function changePassword ({oldPassword, newPassword}) {
+  const id = this.session.get('user_id')
+  await this.changeUserPassword(id, oldPassword, newPassword)
+}
+
+changePassword.description = 'change password after checking old password (user function)'
+
+changePassword.permission = ''
+
+changePassword.params = {
+  oldPassword: {type: 'string'},
+  newPassword: {type: 'string'}
 }
